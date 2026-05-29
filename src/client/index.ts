@@ -5,14 +5,20 @@ import {
   getInput,
   printClientHelp,
 } from "../internal/gamelogic/gamelogic.js";
+
 import {
-  declareAndBind,
-  SimpleQueueType,
-} from "../internal/pubsub/declareAndBind.js";
-import { ExchangePerilDirect, PauseKey } from "../internal/routing/routing.js";
+  ArmyMovesPrefix,
+  ExchangePerilDirect,
+  ExchangePerilTopic,
+  PauseKey,
+} from "../internal/routing/routing.js";
 import { GameState } from "../internal/gamelogic/gamestate.js";
 import { commandSpawn } from "../internal/gamelogic/spawn.js";
 import { commandMove } from "../internal/gamelogic/move.js";
+import { subscribeJSON } from "../internal/pubsub/subscribeJSON.js";
+import { handlerMove, handlerPause } from "./handlers.js";
+import { publishJSON } from "../internal/pubsub/publish.js";
+import { SimpleQueueType } from "../internal/pubsub/declareAndBind.js";
 
 async function main() {
   console.log("Starting Peril client...");
@@ -23,15 +29,27 @@ async function main() {
 
   const username = await clientWelcome();
 
-  const [ch, replies] = await declareAndBind(
+  const game = new GameState(username);
+
+  const ch = await conn.createConfirmChannel();
+
+  await subscribeJSON(
     conn,
     ExchangePerilDirect,
-    `pause.${username}`,
+    `${PauseKey}.${username}`,
     PauseKey,
     SimpleQueueType.Transient,
+    handlerPause(game),
   );
 
-  const game = new GameState(username);
+  await subscribeJSON(
+    conn,
+    ExchangePerilTopic,
+    `${ArmyMovesPrefix}.${username}`,
+    `${ArmyMovesPrefix}.*`,
+    SimpleQueueType.Transient,
+    handlerMove(game),
+  );
 
   while (true) {
     const input = await getInput();
@@ -39,7 +57,14 @@ async function main() {
     if (input[0] === "spawn") {
       commandSpawn(game, input);
     } else if (input[0] === "move") {
-      commandMove(game, input);
+      const armyMove = commandMove(game, input);
+      await publishJSON(
+        ch,
+        ExchangePerilTopic,
+        `${ArmyMovesPrefix}.${username}`,
+        armyMove,
+      );
+      console.log("move published successfully");
     } else if (input[0] === "status") {
       commandStatus(game);
     } else if (input[0] === "help") {
