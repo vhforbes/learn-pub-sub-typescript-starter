@@ -1,4 +1,4 @@
-import amqp, { type Channel } from "amqplib";
+import amqp from "amqplib";
 import { declareAndBind, type SimpleQueueType } from "./declareAndBind.js";
 
 export type AckType = "Ack" | "NackRequeue" | "NackDiscard";
